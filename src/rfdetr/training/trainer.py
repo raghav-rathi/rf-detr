@@ -249,8 +249,20 @@ def _xla_resolves_to_single_device(devices: int | str | Sequence[int], num_nodes
     return XLAAccelerator.auto_device_count() == 1
 
 
-def _requests_multiple_devices(devices: int | str, accelerator: str | None = None) -> bool:
-    """Return whether the configured devices value explicitly requests multiple devices."""
+def _requests_multiple_devices(devices: int | str | Sequence[int], accelerator: str | None = None) -> bool:
+    """Return whether the configured devices value explicitly requests multiple devices.
+
+    ``devices`` can also be a sequence of device indices, such as the ``[N]`` that ``RFDETR.train(device="cuda:N")``
+    forwards.
+
+    Examples:
+        >>> _requests_multiple_devices([1])
+        False
+        >>> _requests_multiple_devices([0, 1])
+        True
+    """
+    if not isinstance(devices, (int, str)):
+        return len(devices) > 1
     if isinstance(devices, int):
         if devices == -1:
             return _accelerator_has_multiple_auto_devices(accelerator)

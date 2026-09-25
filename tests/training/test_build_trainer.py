@@ -1710,6 +1710,41 @@ class TestBuildTrainerSeed:
         mock_seed.assert_not_called()
 
 
+class TestBuildTrainerDeviceIndexList:
+    """``RFDETR.train(device="cuda:N")`` forwards ``devices=[N]``, a list, which ``build_trainer`` must accept."""
+
+    @pytest.mark.parametrize("device", [pytest.param("cuda:0", id="cuda-0"), pytest.param("cuda:1", id="cuda-1")])
+    def test_one_gpu_index_builds_a_single_device_trainer(
+        self, captured_trainer_kwargs: dict[str, Any], tmp_path: Path, device: str
+    ) -> None:
+        """A single GPU picked by index trains on that GPU alone, without a DDP strategy."""
+        from rfdetr.detr import RFDETR
+
+        accelerator, devices = RFDETR._resolve_trainer_device_kwargs(device)
+        with (
+            patch("torch.cuda.is_available", return_value=True),
+            patch("torch.cuda.device_count", return_value=2),
+            patch("torch.cuda.is_bf16_supported", return_value=True),
+        ):
+            build_trainer(_tc(tmp_path, use_ema=False), _mc(), accelerator=accelerator, devices=devices)
+
+        assert captured_trainer_kwargs["devices"] == devices, "the GPU index must reach the Trainer unchanged"
+        assert captured_trainer_kwargs["strategy"] == "auto", f"one GPU must not build DDP: {captured_trainer_kwargs}"
+
+    def test_two_gpu_indices_build_ddp(self, captured_trainer_kwargs: dict[str, Any], tmp_path: Path) -> None:
+        """Two GPUs picked by index are a multi-device run and get the DDP strategy."""
+        from pytorch_lightning.strategies import DDPStrategy
+
+        with (
+            patch("torch.cuda.is_available", return_value=True),
+            patch("torch.cuda.device_count", return_value=2),
+            patch("torch.cuda.is_bf16_supported", return_value=True),
+        ):
+            build_trainer(_tc(tmp_path, use_ema=False), _mc(), accelerator="gpu", devices=[0, 1])
+
+        assert isinstance(captured_trainer_kwargs["strategy"], DDPStrategy), "two GPU indices must build DDP"
+
+
 class TestBuildTrainerDDPFields:
     """build_trainer() must thread devices/num_nodes/strategy from TrainConfig to Trainer."""
 
